@@ -113,13 +113,18 @@ const pokemonsRoute = new Elysia({
   .get("/result", async ({ db }) => {
     return getResult(db);
   })
-  .get("/result-sse", async function ({ db, request }) {
+  .get("/result-sse", async function ({ db, request, server }) {
+    const { signal } = request;
     const response = new Response("hello world", {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
       },
+    });
+
+    signal.addEventListener("abort", () => {
+      clients.splice(clients.indexOf(), 1);
     });
 
     return response;

@@ -1,0 +1,29 @@
+{
+  "name": "server",
+  "type": "module",
+  "version": "1.0.50",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "bun run --watch src/index.ts",
+    "db:seed": "bun src/db/seed.ts"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.1.1",
+    "@elysiajs/static": "^1.1.1",
+    "@elysiajs/stream": "^1.1.0",
+    "@elysiajs/swagger": "^1.1.6",
+    "@hono/node-server": "^1.13.7",
+    "drizzle-orm": "^0.36.4",
+    "drizzle-typebox": "^0.1.1",
+    "elysia": "latest",
+    "hono": "^4.6.12",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "bun-types": "latest",
+    "drizzle-kit": "^0.28.1",
+    "typescript": "^5.7.2"
+  },
+  "module": "src/index.js"
+}
