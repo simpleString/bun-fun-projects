@@ -7,9 +7,11 @@ import { Elysia, t } from "elysia";
 import { db as dbUsage } from "./db";
 import { pokemonTable, voteTable } from "./db/schema";
 
-const clients = [];
+const clients: WritableStreamDefaultWriter<any>[] = [];
 
 let shouldUpdate = false;
+
+const writeData = new WritableStream({});
 
 function getRandomNumberForPokemon(max = 1025) {
   const first = Math.floor(Math.random() * max) + 1;
@@ -92,14 +94,14 @@ const pokemonsRoute = new Elysia({
         voteFor: body.voteForId,
       });
 
-      shouldUpdate = true;
+      // shouldUpdate = true;
       // shouldUpdateClients = true;
 
-      // await Promise.all(
-      //   clients.map(async (c) =>
-      //     c.send(`data: ${JSON.stringify(await getResult(db))}\n\n`)
-      //   )
-      // );
+      await Promise.all(
+        clients.map(async (c) =>
+          c.write(`data: ${JSON.stringify(await getResult(db))}\n\n`)
+        )
+      );
 
       return getRandomPokemonPair(db);
     },
@@ -116,45 +118,59 @@ const pokemonsRoute = new Elysia({
   .get("/result-sse", async function ({ db, request, server }) {
     const { signal } = request;
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        // controller.enqueue("event: interval\n" + "data: ping\n\n");
-        setInterval(() => {
-          if (signal.aborted) {
-            // controller.close();
-            return;
-          }
-          controller.enqueue("event: interval\n" + "data: ping\n\n");
-          // clearInterval(interval);
-        }, 5000);
+    const responseStream = new TransformStream();
 
-        while (true) {
-          if (signal.aborted) {
-            console.log("aborted");
-            // controller.close();
-            // clearInterval(interval);
-            return;
-          }
-          // console.log("shouldUpdate", shouldUpdate);
-          if (shouldUpdate) {
-            controller.enqueue(
-              `data: ${JSON.stringify(await getResult(db))}\n\n`
-            );
-            shouldUpdate = false;
-          }
-          // controller.enqueue("event: interval\n" + "data: ping\n\n");
-          await new Promise((resolve) => setTimeout(resolve, 1));
-        }
-      },
-    });
+    const writer = responseStream.writable.getWriter();
+    const encoder = new TextEncoder();
+
+    const write = (data: unknown) => {
+      writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+    };
+
+    // const stream = new ReadableStream({
+    //   async start(controller) {
+    //     // controller.enqueue("event: interval\n" + "data: ping\n\n");
+    //     setInterval(() => {
+    //       if (signal.aborted) {
+    //         // controller.close();
+    //         return;
+    //       }
+    //       controller.enqueue("event: interval\n" + "data: ping\n\n");
+    //       // clearInterval(interval);
+    //     }, 5000);
+
+    //     while (true) {
+    //       if (signal.aborted) {
+    //         console.log("aborted");
+    //         // controller.close();
+    //         // clearInterval(interval);
+    //         return;
+    //       }
+    //       // console.log("shouldUpdate", shouldUpdate);
+    //       if (writeData) {
+    //         controller.enqueue(
+    //           `data: ${JSON.stringify(writeData)}\n\n`
+    //         );
+    //         shouldUpdate = false;
+    //       }
+    //       // controller.enqueue("event: interval\n" + "data: ping\n\n");
+    //       await new Promise((resolve) => setTimeout(resolve, 1));
+    //     }
+    //   },
+    // });
+
+    const interval = setInterval(() => {
+      writer.write(encoder.encode("event: interval\n" + "data: ping\n\n"));
+    }, 5000);
 
     signal.addEventListener("abort", () => {
-      clients.splice(clients.indexOf(stream), 1);
+      clearInterval(interval);
+      clients.splice(clients.indexOf(writer), 1);
     });
 
-    clients.push(stream);
+    clients.push(writer);
 
-    const response = new Response(stream, {
+    const response = new Response(responseStream.readable, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
