@@ -1,6 +1,5 @@
 import cors from "@elysiajs/cors";
 import { staticPlugin } from "@elysiajs/static";
-import Stream from "@elysiajs/stream";
 import swagger from "@elysiajs/swagger";
 import { eq, getTableColumns, inArray } from "drizzle-orm";
 import { NodePgClient, NodePgDatabase } from "drizzle-orm/node-postgres";
@@ -8,9 +7,9 @@ import { Elysia, t } from "elysia";
 import { db as dbUsage } from "./db";
 import { pokemonTable, voteTable } from "./db/schema";
 
-const clients: Stream<string | number | boolean | object>[] = [];
+const clients = [];
 
-let shouldUpdateClients = false;
+let shouldUpdate = false;
 
 function getRandomNumberForPokemon(max = 1025) {
   const first = Math.floor(Math.random() * max) + 1;
@@ -93,13 +92,14 @@ const pokemonsRoute = new Elysia({
         voteFor: body.voteForId,
       });
 
+      shouldUpdate = true;
       // shouldUpdateClients = true;
 
-      await Promise.all(
-        clients.map(async (c) =>
-          c.send(`data: ${JSON.stringify(await getResult(db))}\n\n`)
-        )
-      );
+      // await Promise.all(
+      //   clients.map(async (c) =>
+      //     c.send(`data: ${JSON.stringify(await getResult(db))}\n\n`)
+      //   )
+      // );
 
       return getRandomPokemonPair(db);
     },
@@ -115,7 +115,46 @@ const pokemonsRoute = new Elysia({
   })
   .get("/result-sse", async function ({ db, request, server }) {
     const { signal } = request;
-    const response = new Response("hello world", {
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        // controller.enqueue("event: interval\n" + "data: ping\n\n");
+        setInterval(() => {
+          if (signal.aborted) {
+            // controller.close();
+            return;
+          }
+          controller.enqueue("event: interval\n" + "data: ping\n\n");
+          // clearInterval(interval);
+        }, 5000);
+
+        while (true) {
+          if (signal.aborted) {
+            console.log("aborted");
+            // controller.close();
+            // clearInterval(interval);
+            return;
+          }
+          // console.log("shouldUpdate", shouldUpdate);
+          if (shouldUpdate) {
+            controller.enqueue(
+              `data: ${JSON.stringify(await getResult(db))}\n\n`
+            );
+            shouldUpdate = false;
+          }
+          // controller.enqueue("event: interval\n" + "data: ping\n\n");
+          await new Promise((resolve) => setTimeout(resolve, 1));
+        }
+      },
+    });
+
+    signal.addEventListener("abort", () => {
+      clients.splice(clients.indexOf(stream), 1);
+    });
+
+    clients.push(stream);
+
+    const response = new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
@@ -123,11 +162,11 @@ const pokemonsRoute = new Elysia({
       },
     });
 
-    signal.addEventListener("abort", () => {
-      clients.splice(clients.indexOf(), 1);
-    });
+    // signal.addEventListener("abort", () => {
+    //   clients.splice(clients.indexOf(), 1);
+    // });
 
-    return response;
+    // return response;
 
     // console.log(request);
     // const stream = new Stream();
@@ -168,7 +207,7 @@ const pokemonsRoute = new Elysia({
     // yield "id: -1\ndata:\n\n";
     // await new Promise((resolve) => setTimeout(resolve, 1000));
     // }
-    return stream;
+    return response;
     // return new Response(stream, {
     //   headers: {
     //     "Content-Type": "text/event-stream",
